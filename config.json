@@ -1,0 +1,8 @@
+{
+    "server_addr": ":8080",
+    "proxy_addr": ":6543",
+    "postgres_dsn": "postgres://postgres:postgres@postgres:5432/testdb?sslmode=disable",
+    "encryption_key": "",
+    "max_connections": 20,
+    "min_connections": 5
+}
