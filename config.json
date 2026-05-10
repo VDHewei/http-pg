@@ -4,5 +4,9 @@
     "postgres_dsn": "postgres://postgres:postgres@postgres:5432/testdb?sslmode=disable",
     "encryption_key": "",
     "max_connections": 20,
-    "min_connections": 5
+    "min_connections": 5,
+    "server_url": "",
+    "proxy_protocol": "pg",
+    "mysql_proxy_addr": ":3306",
+    "mysql_dsn": "mysql://root:root@mysql:3306/mysql"
 }

@@ -31,6 +31,7 @@ type Pool interface {
 type Handler struct {
 	pool   Pool
 	encKey []byte
+	stmts  map[string]string // sessionID -> cached statement SQL (unnamed)
 }
 
 // NewHandler creates a new Handler.
@@ -43,6 +44,7 @@ func NewHandler(pool Pool, encKey string) (*Handler, error) {
 	return &Handler{
 		pool:   pool,
 		encKey: key,
+		stmts:  make(map[string]string),
 	}, nil
 }
 
@@ -100,25 +102,95 @@ func (h *Handler) HandleQuery(c *gin.Context) {
 
 	log.Printf("[Session %s] SQL: %s", sessionID[:8], req.SQL)
 
-	result, err := h.pool.ExecSQL(c.Request.Context(), sessionID, req.SQL)
+	// Handle extended query protocol: Parse and Execute
+	if req.Type == 'P' {
+		// Parse: cache the SQL for unnamed statement
+		h.stmts[sessionID] = req.SQL
+		// Return empty response (just acknowledge parse was successful)
+		result := pgpool.QueryResult{}
+		resultJSON, _ := json.Marshal(result)
+		encrypted, err := crypto.Encrypt(resultJSON, h.encKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "encrypt: " + err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "application/octet-stream", encrypted)
+		return
+	}
+
+	if req.Type == 'E' || req.Type == 'B' {
+		// Bind/Execute: use cached SQL from previous Parse
+		cachedSQL, ok := h.stmts[sessionID]
+		if !ok || cachedSQL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no parsed statement found"})
+			return
+		}
+		req.SQL = cachedSQL
+	}
+
+	cmdType := sqlCommandType(req.SQL)
+	responseJSON, err := h.executeSQL(c.Request.Context(), sessionID, req.SQL, cmdType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "exec sql: " + err.Error()})
 		return
 	}
 
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "marshal result: " + err.Error()})
-		return
-	}
-
-	encrypted, err := crypto.Encrypt(resultJSON, h.encKey)
+	encrypted, err := crypto.Encrypt(responseJSON, h.encKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "encrypt response: " + err.Error()})
 		return
 	}
 
 	c.Data(http.StatusOK, "application/octet-stream", encrypted)
+}
+
+// executeSQL routes SQL execution to the appropriate method based on command type.
+func (h *Handler) executeSQL(ctx context.Context, sessionID, sql, cmdType string) ([]byte, error) {
+	switch cmdType {
+	case "SELECT", "SHOW", "EXPLAIN", "DESCRIBE", "WITH":
+		return h.executeQuery(ctx, sessionID, sql)
+	case "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "TRUNCATE",
+		"SET", "BEGIN", "COMMIT", "ROLLBACK", "GRANT", "REVOKE", "COPY", "VACUUM":
+		return h.executeCommand(ctx, sessionID, sql)
+	default:
+		return h.executeQuery(ctx, sessionID, sql)
+	}
+}
+
+func (h *Handler) executeQuery(ctx context.Context, sessionID, sql string) ([]byte, error) {
+	result, err := h.pool.ExecSQL(ctx, sessionID, sql)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(result)
+}
+
+func (h *Handler) executeCommand(ctx context.Context, sessionID, sql string) ([]byte, error) {
+	rowsAffected, err := h.pool.ExecCommand(ctx, sessionID, sql)
+	if err != nil {
+		return nil, err
+	}
+	result := pgpool.QueryResult{
+		RowsAffected: rowsAffected,
+	}
+	return json.Marshal(result)
+}
+
+// sqlCommandType extracts the first word (command type) from a SQL statement.
+func sqlCommandType(sql string) string {
+	i := 0
+	for i < len(sql) && (sql[i] == ' ' || sql[i] == '\t' || sql[i] == '\n' || sql[i] == '\r') {
+		i++
+	}
+	j := i
+	for j < len(sql) && sql[j] != ' ' && sql[j] != '\t' && sql[j] != '\n' &&
+		sql[j] != '\r' && sql[j] != '(' && sql[j] != ';' {
+		j++
+	}
+	if j <= i {
+		return ""
+	}
+	return sql[i:j]
 }
 
 // CloseSession closes a PgSQL session.
@@ -130,6 +202,7 @@ func (h *Handler) CloseSession(c *gin.Context) {
 	}
 
 	h.pool.ReleaseSession(sessionID)
+	delete(h.stmts, sessionID)
 	c.JSON(http.StatusOK, gin.H{"status": "closed"})
 }
 

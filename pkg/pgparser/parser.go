@@ -130,6 +130,15 @@ func ExtractSQL(msgType byte, payload []byte) string {
 	return ""
 }
 
+// ExtractStatementName extracts the statement name from a Parse message payload.
+func ExtractStatementName(payload []byte) string {
+	parts := splitNull(payload)
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+	return ""
+}
+
 // IsQueryType returns true if the message type is a query-related message.
 func IsQueryType(msgType byte) bool {
 	switch msgType {

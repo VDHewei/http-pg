@@ -1,13 +1,6 @@
 # HTTP-PG: PgSQL Proxy over HTTP with Encryption
 
-```
-  __    __  ________  ________  _____       ________  ________
- / /   / / /_  __/ / /_  __/ / / ___ \     / ___/ _ \/ ___/ _ \
-/ /_  / /   / / / /   / /   / / /_/ /    / (_ /  __/ (_ / , _/
-\___/ /_/   /_/ /_/   /_/   /_/\____/     \___/\___/\___/_/|_|
-
-     HTTP-PG  PgSQL Proxy over HTTP with Encryption
-```
+![HTTP-PG Logo](logo.svg)
 
 A PostgreSQL proxy that forwards PgSQL wire protocol messages to an HTTP API server with AES-256-GCM encryption. The server decrypts the messages, executes SQL on real PostgreSQL connections, and returns results through the encrypted HTTP channel.
 

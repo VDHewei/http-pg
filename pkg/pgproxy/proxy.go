@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgproto3"
 
 	"github.com/http-pg/http-pg/pkg/httpclient"
@@ -21,6 +20,7 @@ type Proxy struct {
 	httpClient *httpclient.Client
 	listener   net.Listener
 	wg         sync.WaitGroup
+	quit       chan struct{}
 }
 
 // New creates a new Proxy.
@@ -33,6 +33,7 @@ func New(listenAddr, serverURL, encKey string) (*Proxy, error) {
 	return &Proxy{
 		listenAddr: listenAddr,
 		httpClient: client,
+		quit:       make(chan struct{}),
 	}, nil
 }
 
@@ -49,6 +50,12 @@ func (p *Proxy) Start() error {
 	for {
 		conn, err := p.listener.Accept()
 		if err != nil {
+			select {
+			case <-p.quit:
+				log.Printf("[Proxy] Shutting down listener")
+				return nil
+			default:
+			}
 			log.Printf("[Proxy] Accept error: %v", err)
 			continue
 		}
@@ -61,6 +68,7 @@ func (p *Proxy) Start() error {
 // Stop closes the listener and waits for all connections to finish.
 func (p *Proxy) Stop() error {
 	if p.listener != nil {
+		close(p.quit)
 		p.listener.Close()
 	}
 	p.wg.Wait()
@@ -71,8 +79,7 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 	defer p.wg.Done()
 	defer clientConn.Close()
 
-	sessionID := uuid.New().String()
-	log.Printf("[Proxy] New connection: session=%s, remote=%s", sessionID[:8], clientConn.RemoteAddr())
+	var sessionID string
 
 	// Create Backend to communicate with PgSQL client
 	// Backend reads frontend messages from client, sends backend messages to client
@@ -88,8 +95,17 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 	// Parse startup params for logging
 	startupData, _ := pgparser.ParseStartupMessage(rawStartup)
 	if startupData != nil {
-		log.Printf("[Proxy] Session %s: Startup params=%v", sessionID[:8], startupData.Parameters)
+		log.Printf("[Proxy] Startup params: %v", startupData.Parameters)
 	}
+
+	// Create session on the HTTP server
+	serverSessionID, err := p.httpClient.SessionRequest(rawStartup)
+	if err != nil {
+		log.Printf("[Proxy] Create session on server error: %v", err)
+		return
+	}
+	sessionID = serverSessionID
+	log.Printf("[Proxy] Session %s: Created on server", sessionID[:8])
 
 	// Send auth ok
 	backend.Send(&pgproto3.AuthenticationOk{})
@@ -127,7 +143,7 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 		}
 
 		msgType := encoded[0]
-		payload := encoded[1:]
+		payload := encoded[5:] // skip type byte + 4-byte length
 		sql := pgparser.ExtractSQL(msgType, payload)
 
 		if pgparser.IsTerminate(msgType) {
@@ -202,12 +218,7 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 			backend.Send(dr)
 		}
 
-		tag := []byte("SELECT")
-		if queryResult.RowsAffected > 0 {
-			tag = []byte(fmt.Sprintf("SELECT %d", queryResult.RowsAffected))
-		} else {
-			tag = []byte(fmt.Sprintf("SELECT %d", len(queryResult.Rows)))
-		}
+		tag := commandTag(sql, len(queryResult.Rows), queryResult.RowsAffected)
 		backend.Send(&pgproto3.CommandComplete{CommandTag: tag})
 		backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 
@@ -230,6 +241,71 @@ func (p *Proxy) sendError(backend *pgproto3.Backend, errMsg string) {
 	})
 	backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 	backend.Flush()
+}
+
+// commandTag returns the appropriate CommandComplete tag for the given SQL.
+// Format follows PostgreSQL protocol: "SELECT n", "INSERT 0 n", "UPDATE n", "DELETE n", or just the command word.
+func commandTag(sql string, numRows int, rowsAffected int64) []byte {
+	cmd := sqlCommandType(sql)
+	switch cmd {
+	case "SELECT", "SHOW", "EXPLAIN", "DESCRIBE":
+		return []byte(fmt.Sprintf("%s %d", cmd, numRows))
+	case "INSERT":
+		return []byte(fmt.Sprintf("INSERT 0 %d", rowsAffected))
+	case "UPDATE", "DELETE", "MOVE", "FETCH", "COPY":
+		return []byte(fmt.Sprintf("%s %d", cmd, rowsAffected))
+	case "CREATE", "ALTER", "DROP":
+		// For CREATE/ALTER/DROP, extract object type: "CREATE TABLE", "ALTER TABLE", etc.
+		return createTag(sql)
+	default:
+		if rowsAffected > 0 {
+			return []byte(fmt.Sprintf("%s %d", cmd, rowsAffected))
+		}
+		return []byte(cmd)
+	}
+}
+
+// sqlCommandType extracts the SQL command type from the query string.
+func sqlCommandType(sql string) string {
+	s := ""
+	// Trim leading whitespace
+	i := 0
+	for i < len(sql) && (sql[i] == ' ' || sql[i] == '\t' || sql[i] == '\n' || sql[i] == '\r') {
+		i++
+	}
+	// Read first word
+	for i < len(sql) && sql[i] != ' ' && sql[i] != '\t' && sql[i] != '\n' && sql[i] != '\r' && sql[i] != '(' && sql[i] != ';' {
+		s += string(sql[i])
+		i++
+	}
+	return s
+}
+
+// createTag builds a CREATE command tag like "CREATE TABLE" or "CREATE INDEX".
+func createTag(sql string) []byte {
+	parts := make([]string, 0, 3)
+	word := ""
+	inWord := false
+	for i := 0; i < len(sql) && len(parts) < 3; i++ {
+		ch := sql[i]
+		if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == ';' {
+			if inWord {
+				parts = append(parts, word)
+				word = ""
+				inWord = false
+			}
+		} else {
+			word += string(ch)
+			inWord = true
+		}
+	}
+	if inWord && len(parts) < 3 {
+		parts = append(parts, word)
+	}
+	if len(parts) >= 2 && (parts[0] == "CREATE" || parts[0] == "ALTER" || parts[0] == "DROP") {
+		return []byte(fmt.Sprintf("%s %s", parts[0], parts[1]))
+	}
+	return []byte(parts[0])
 }
 
 type pgMessageRequest struct {

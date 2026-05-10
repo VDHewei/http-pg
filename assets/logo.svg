@@ -1,69 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="200" height="200">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#16213e"/>
     </linearGradient>
-    <linearGradient id="pg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#336791;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#4A90D9;stop-opacity:1" />
+    <linearGradient id="db" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#336791"/>
+      <stop offset="100%" stop-color="#4d94b8"/>
     </linearGradient>
-    <linearGradient id="http" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#FF6B35;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#FF8C42;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="lock" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#00BFA6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#00D9C0;stop-opacity:1" />
+    <linearGradient id="arrow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4d94b8"/>
+      <stop offset="100%" stop-color="#7ec8e3"/>
     </linearGradient>
   </defs>
 
-  <!-- Background -->
-  <rect width="800" height="300" rx="20" fill="url(#bg)"/>
+  <!-- Background rounded rect -->
+  <rect x="0" y="0" width="400" height="400" rx="60" fill="url(#bg)"/>
 
-  <!-- PostgreSQL Database Icon -->
-  <g transform="translate(100, 60)">
-    <!-- Elephant trunk / DB cylinder -->
-    <ellipse cx="60" cy="20" rx="45" ry="15" fill="url(#pg)" opacity="0.9"/>
-    <path d="M15 20 L15 120 Q15 140 60 140 Q105 140 105 120 L105 20" fill="url(#pg)" opacity="0.85"/>
-    <ellipse cx="60" cy="120" rx="45" ry="15" fill="#2D5A7B" opacity="0.7"/>
-    <!-- DB text -->
-    <text x="60" y="80" text-anchor="middle" fill="white" font-size="24" font-family="monospace" font-weight="bold">DB</text>
+  <!-- Database cylinder - body -->
+  <ellipse cx="200" cy="130" rx="80" ry="25" fill="url(#db)" opacity="0.9"/>
+  <rect x="120" y="130" width="160" height="100" fill="url(#db)"/>
+  <ellipse cx="200" cy="230" rx="80" ry="25" fill="#2c5870" opacity="0.8"/>
+  <!-- Bottom rim highlight -->
+  <ellipse cx="200" cy="230" rx="80" ry="25" fill="none" stroke="#5a9bb5" stroke-width="2"/>
+
+  <!-- Connection arcs around the database -->
+  <path d="M 90 170 Q 50 170 50 200 Q 50 230 90 230" fill="none" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M 310 170 Q 350 170 350 200 Q 350 230 310 230" fill="none" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Arrow heads (right side) -->
+  <polygon points="88,222 100,210 100,234" fill="#7ec8e3"/>
+  <polygon points="312,222 300,210 300,234" fill="#7ec8e3"/>
+
+  <!-- Connection dots -->
+  <circle cx="90" cy="175" r="4" fill="#7ec8e3"/>
+  <circle cx="310" cy="175" r="4" fill="#7ec8e3"/>
+  <circle cx="90" cy="225" r="4" fill="#7ec8e3"/>
+  <circle cx="310" cy="225" r="4" fill="#7ec8e3"/>
+
+  <!-- Text: HTTP-PG -->
+  <text x="200" y="310" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="6" fill="#ffffff">
+    HTTP-PG
+  </text>
+
+  <!-- Thin divider line -->
+  <line x1="120" y1="325" x2="280" y2="325" stroke="#7ec8e3" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- Tagline -->
+  <text x="200" y="350" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="13" font-weight="400" letter-spacing="3" fill="#7ec8e3" opacity="0.7">
+    POSTGRESQL PROXY
+  </text>
+
+  <!-- Small encryption symbol -->
+  <g transform="translate(200, 40)" opacity="0.6">
+    <path d="M -8 6 L -8 0 C -8 -5 8 -5 8 0 L 8 6 Z" fill="none" stroke="#7ec8e3" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="0" cy="2" r="1.5" fill="#7ec8e3"/>
   </g>
-
-  <!-- Bridge/Arrow -->
-  <g transform="translate(240, 110)">
-    <path d="M0 30 L60 30" stroke="white" stroke-width="3" stroke-dasharray="5,5" opacity="0.6"/>
-    <polygon points="60,18 75,30 60,42" fill="#FF6B35" opacity="0.9"/>
-  </g>
-
-  <!-- HTTP Icon -->
-  <g transform="translate(380, 60)">
-    <rect width="100" height="100" rx="15" fill="url(#http)" opacity="0.9"/>
-    <text x="50" y="55" text-anchor="middle" fill="white" font-size="20" font-family="monospace" font-weight="bold">HTTP</text>
-    <text x="50" y="80" text-anchor="middle" fill="white" font-size="12" font-family="monospace">REST</text>
-  </g>
-
-  <!-- Lock encryption icon -->
-  <g transform="translate(530, 70)">
-    <rect width="70" height="50" rx="10" fill="url(#lock)" opacity="0.9"/>
-    <path d="M15 0 Q15 -25 35 -25 Q55 -25 55 0" fill="none" stroke="#00BFA6" stroke-width="6" stroke-linecap="round"/>
-    <circle cx="35" cy="25" r="6" fill="white"/>
-    <line x1="35" y1="28" x2="35" y2="37" stroke="white" stroke-width="3"/>
-    <!-- AES text -->
-    <text x="35" y="62" text-anchor="middle" fill="#00D9C0" font-size="10" font-family="monospace">AES-GCM</text>
-  </g>
-
-  <!-- Back arrow -->
-  <g transform="translate(650, 110)">
-    <polygon points="0,18 15,30 0,42" fill="#FF6B35" opacity="0.7"/>
-    <path d="M15 30 L75 30" stroke="white" stroke-width="3" stroke-dasharray="5,5" opacity="0.6"/>
-  </g>
-
-  <!-- Title -->
-  <text x="400" y="200" text-anchor="middle" fill="white" font-size="36" font-family="monospace" font-weight="bold">HTTP-PG</text>
-  <text x="400" y="230" text-anchor="middle" fill="#8899AA" font-size="14" font-family="monospace">PgSQL Proxy over HTTP Encrypted Bridge</text>
-
-  <!-- Version -->
-  <text x="400" y="270" text-anchor="middle" fill="#555566" font-size="11" font-family="monospace">v1.0.0  ·  Go  ·  pgx  ·  Gin  ·  AES-256-GCM</text>
 </svg>

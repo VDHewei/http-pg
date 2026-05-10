@@ -10,45 +10,70 @@ import (
 	"github.com/http-pg/http-pg/pkg/crypto"
 )
 
-// Client is an HTTP client for forwarding PgSQL messages to the API server.
+// ClientConfig HTTP 客户端配置
+type ClientConfig struct {
+	// BaseURL 后端 HTTP 服务器的基础 URL（如 "http://192.168.1.100:8080"）
+	BaseURL string
+	// Timeout HTTP 请求超时时间（默认 30 秒）
+	Timeout time.Duration
+	// RetryAttempts 请求失败时的重试次数（默认 0，不重试）
+	RetryAttempts int
+}
+
+// DefaultClientConfig 返回带默认值的客户端配置
+func DefaultClientConfig() ClientConfig {
+	return ClientConfig{
+		Timeout:       30 * time.Second,
+		RetryAttempts: 0,
+	}
+}
+
+// Client HTTP 客户端，用于代理与后端 API 服务器间的加密通信
 type Client struct {
-	serverURL  string
+	// serverURL 后端服务器基础 URL
+	serverURL string
+	// httpClient 底层 HTTP 客户端
 	httpClient *http.Client
-	encKey     []byte
+	// encKey 已派生的 AES-256-GCM 加密密钥（32 字节）
+	encKey []byte
+	// retryAttempts 重试次数
+	retryAttempts int
 }
 
-// Request represents a proxied PgSQL message.
-type Request struct {
-	SessionID string `json:"session_id"`
-	Message   []byte `json:"message"`
-}
-
-// Response represents a response from the API server.
-type Response struct {
-	SessionID string `json:"session_id"`
-	Result    []byte `json:"result"`
-	Error     string `json:"error,omitempty"`
-}
-
-// NewClient creates a new HTTP client.
+// NewClient 使用默认配置创建 HTTP 客户端（向后兼容）
 func NewClient(serverURL, encKey string) (*Client, error) {
+	cfg := DefaultClientConfig()
+	cfg.BaseURL = serverURL
+	return NewClientWithConfig(cfg, encKey)
+}
+
+// NewClientWithConfig 使用自定义配置创建 HTTP 客户端
+func NewClientWithConfig(cfg ClientConfig, encKey string) (*Client, error) {
 	key, err := crypto.DeriveKey(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("derive key: %w", err)
 	}
 
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+
 	return &Client{
-		serverURL: serverURL,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
-		encKey: key,
+		serverURL:     cfg.BaseURL,
+		httpClient:    &http.Client{Timeout: cfg.Timeout},
+		encKey:        key,
+		retryAttempts: cfg.RetryAttempts,
 	}, nil
 }
 
-// SessionRequest creates a new session on the server.
+// SessionRequest 在服务器上创建新的数据库会话
+//
+// 处理流程:
+//  1. 加密启动参数
+//  2. POST /api/v1/session
+//  3. 返回服务端生成的 session UUID
 func (c *Client) SessionRequest(params []byte) (string, error) {
-	// Encrypt the startup parameters
+	// 加密启动参数
 	encrypted, err := crypto.Encrypt(params, c.encKey)
 	if err != nil {
 		return "", fmt.Errorf("encrypt startup params: %w", err)
@@ -67,15 +92,20 @@ func (c *Client) SessionRequest(params []byte) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("session creation failed: status=%d, body=%s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("session creation failed: status=%d body=%s", resp.StatusCode, string(body))
 	}
 
 	return string(body), nil
 }
 
-// QueryRequest sends a PgSQL message and returns the response.
+// QueryRequest 发送 SQL 查询请求并返回解密后的响应
+//
+// 处理流程:
+//  1. 加密消息体
+//  2. POST /api/v1/query（附带 X-Session-ID 头）
+//  3. 解密响应体
 func (c *Client) QueryRequest(sessionID string, msgBytes []byte) ([]byte, error) {
-	// Encrypt the message
+	// 加密消息
 	encrypted, err := crypto.Encrypt(msgBytes, c.encKey)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt message: %w", err)
@@ -100,10 +130,10 @@ func (c *Client) QueryRequest(sessionID string, msgBytes []byte) ([]byte, error)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("query failed: status=%d, body=%s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("query failed: status=%d body=%s", resp.StatusCode, string(body))
 	}
 
-	// Decrypt the response
+	// 解密响应
 	decrypted, err := crypto.Decrypt(body, c.encKey)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt response: %w", err)
@@ -112,7 +142,9 @@ func (c *Client) QueryRequest(sessionID string, msgBytes []byte) ([]byte, error)
 	return decrypted, nil
 }
 
-// CloseSession notifies the server to close a session.
+// CloseSession 通知服务器关闭指定会话
+//
+// DELETE /api/v1/session/:session_id
 func (c *Client) CloseSession(sessionID string) error {
 	req, err := http.NewRequest("DELETE", c.serverURL+"/api/v1/session/"+sessionID, nil)
 	if err != nil {
