@@ -3,8 +3,9 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY cmd/ ./cmd/
-COPY pkg/ ./pkg/
+COPY . .
+
+RUN ls -la cmd/ && ls -la cmd/proxy/
 
 RUN CGO_ENABLED=0 go build -o /proxy ./cmd/proxy
 RUN CGO_ENABLED=0 go build -o /server ./cmd/server
