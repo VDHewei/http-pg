@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-proxy
-server
+/proxy
+/server
 
 # Test binary
 *.test
