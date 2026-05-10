@@ -13,7 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgproto3"
 
-	"github.com/http-pg/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/crypto"
 )
 
 // =============================================================================

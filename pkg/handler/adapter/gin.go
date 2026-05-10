@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/http-pg/http-pg/pkg/handler"
+	"github.com/VDHewei/http-pg/pkg/handler"
 )
 
 // RegisterGinRoutes 将核心 Handler 的业务方法注册到 Gin 路由
@@ -20,6 +20,7 @@ func RegisterGinRoutes(router gin.IRouter, h *handler.Handler) {
 
 // ginCreateSession 创建数据库会话的 Gin 处理器
 // POST /api/v1/session
+//   - Header: X-Protocol（可选，"pg" 或 "mysql"，默认 "pg"）
 //   - Body: 加密的连接参数（application/octet-stream）
 //   - Response: 纯文本 session UUID
 func ginCreateSession(h *handler.Handler) gin.HandlerFunc {
@@ -30,7 +31,12 @@ func ginCreateSession(h *handler.Handler) gin.HandlerFunc {
 			return
 		}
 
-		sessionID, err := h.CreateSession(c.Request.Context(), body, handler.ProtocolPgSQL)
+		protocol := c.GetHeader("X-Protocol")
+		if protocol == "" {
+			protocol = string(handler.ProtocolPgSQL)
+		}
+
+		sessionID, err := h.CreateSession(c.Request.Context(), body, handler.ProtocolType(protocol))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return

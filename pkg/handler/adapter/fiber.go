@@ -5,7 +5,7 @@ package adapter
 import (
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/http-pg/http-pg/pkg/handler"
+	"github.com/VDHewei/http-pg/pkg/handler"
 )
 
 // RegisterFiberRoutes 将核心 Handler 的业务方法注册到 Fiber 路由
@@ -21,13 +21,19 @@ func RegisterFiberRoutes(app *fiber.App, h *handler.Handler) {
 
 // fiberCreateSession 创建数据库会话的 Fiber 处理器
 // POST /api/v1/session
+//   - Header: X-Protocol（可选，"pg" 或 "mysql"，默认 "pg"）
 //   - Body: 加密的连接参数（application/octet-stream）
 //   - Response: 纯文本 session UUID
 func fiberCreateSession(h *handler.Handler) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		body := c.Body()
 
-		sessionID, err := h.CreateSession(c.Context(), body, handler.ProtocolPgSQL)
+		protocol := c.Get("X-Protocol")
+		if protocol == "" {
+			protocol = string(handler.ProtocolPgSQL)
+		}
+
+		sessionID, err := h.CreateSession(c.Context(), body, handler.ProtocolType(protocol))
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": err.Error(),

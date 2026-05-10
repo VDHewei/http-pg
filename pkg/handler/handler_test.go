@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/http-pg/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/crypto"
 )
 
 // =============================================================================

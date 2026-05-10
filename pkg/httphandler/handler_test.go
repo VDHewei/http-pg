@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/http-pg/http-pg/pkg/crypto"
-	"github.com/http-pg/http-pg/pkg/pgpool"
+	"github.com/VDHewei/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/pgpool"
 )
 
 type mockPoolManager struct{}

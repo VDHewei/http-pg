@@ -1,59 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="200" height="200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a1a2e"/>
-      <stop offset="100%" stop-color="#16213e"/>
-    </linearGradient>
-    <linearGradient id="db" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#336791"/>
-      <stop offset="100%" stop-color="#4d94b8"/>
-    </linearGradient>
-    <linearGradient id="arrow" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#4d94b8"/>
-      <stop offset="100%" stop-color="#7ec8e3"/>
-    </linearGradient>
+    <style>
+      .bg { fill: #1a1a2e; }
+      .text-main { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; font-size: 52px; font-weight: 800; fill: #e5e7eb; letter-spacing: 14px; }
+      .text-sub { font-family: 'Segoe UI', -apple-system, Arial, sans-serif; font-size: 14px; font-weight: 600; fill: #9ca3af; letter-spacing: 8px; }
+    </style>
   </defs>
 
-  <!-- Background rounded rect -->
-  <rect x="0" y="0" width="400" height="400" rx="60" fill="url(#bg)"/>
+  <rect class="bg" width="1024" height="512" rx="48"/>
 
-  <!-- Database cylinder - body -->
-  <ellipse cx="200" cy="130" rx="80" ry="25" fill="url(#db)" opacity="0.9"/>
-  <rect x="120" y="130" width="160" height="100" fill="url(#db)"/>
-  <ellipse cx="200" cy="230" rx="80" ry="25" fill="#2c5870" opacity="0.8"/>
-  <!-- Bottom rim highlight -->
-  <ellipse cx="200" cy="230" rx="80" ry="25" fill="none" stroke="#5a9bb5" stroke-width="2"/>
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- DATA PIPELINE MARK                               -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <g id="mark">
 
-  <!-- Connection arcs around the database -->
-  <path d="M 90 170 Q 50 170 50 200 Q 50 230 90 230" fill="none" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
-  <path d="M 310 170 Q 350 170 350 200 Q 350 230 310 230" fill="none" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
+    <!-- ── Left: HTTP badge ── -->
+    <rect x="244" y="178" width="80" height="80" rx="16" fill="#1e293b"/>
+    <rect x="248" y="182" width="72" height="72" rx="12" fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+    <text x="284" y="228" font-family="'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#60a5fa" text-anchor="middle">HTTP</text>
 
-  <!-- Arrow heads (right side) -->
-  <polygon points="88,222 100,210 100,234" fill="#7ec8e3"/>
-  <polygon points="312,222 300,210 300,234" fill="#7ec8e3"/>
+    <!-- ── Arrow: HTTP → Proxy ── -->
+    <line x1="332" y1="218" x2="402" y2="218" stroke="#4b5563" stroke-width="3" stroke-linecap="round"/>
+    <polygon points="402,210 416,218 402,226" fill="#4b5563"/>
+    <text x="374" y="200" font-family="'Segoe UI',sans-serif" font-size="10" fill="#6366f1" text-anchor="middle" font-weight="600" letter-spacing="1">AES-256</text>
 
-  <!-- Connection dots -->
-  <circle cx="90" cy="175" r="4" fill="#7ec8e3"/>
-  <circle cx="310" cy="175" r="4" fill="#7ec8e3"/>
-  <circle cx="90" cy="225" r="4" fill="#7ec8e3"/>
-  <circle cx="310" cy="225" r="4" fill="#7ec8e3"/>
+    <!-- ── Center: Proxy node (hexagon) ── -->
+    <polygon points="472,178 520,198 520,238 472,258 424,238 424,198" fill="#2d3748" stroke="#4a5568" stroke-width="2.5"/>
+    <polygon points="472,190 506,218 472,246 438,218" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.5"/>
+    <circle cx="472" cy="218" r="6" fill="#6366f1"/>
 
-  <!-- Text: HTTP-PG -->
-  <text x="200" y="310" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="36" font-weight="700" letter-spacing="6" fill="#ffffff">
-    HTTP-PG
-  </text>
+    <!-- Lock on hexagon -->
+    <g transform="translate(458, 224)" opacity="0.6">
+      <rect x="2" y="5" width="10" height="8" rx="1.5" fill="none" stroke="#34d399" stroke-width="2"/>
+      <path d="M 4,5 L 4,1 C 4,-1 10,-1 10,1 L 10,5" fill="none" stroke="#34d399" stroke-width="2"/>
+    </g>
 
-  <!-- Thin divider line -->
-  <line x1="120" y1="325" x2="280" y2="325" stroke="#7ec8e3" stroke-width="0.5" opacity="0.4"/>
+    <!-- ── Arrow: Proxy → PG/MySQL ── -->
+    <line x1="528" y1="218" x2="618" y2="218" stroke="#4b5563" stroke-width="3" stroke-linecap="round"/>
+    <polygon points="618,210 632,218 618,226" fill="#4b5563"/>
+    <text x="580" y="200" font-family="'Segoe UI',sans-serif" font-size="10" fill="#f59e0b" text-anchor="middle" font-weight="600" letter-spacing="1">FORWARD</text>
 
-  <!-- Tagline -->
-  <text x="200" y="350" text-anchor="middle" font-family="'Segoe UI', Arial, sans-serif" font-size="13" font-weight="400" letter-spacing="3" fill="#7ec8e3" opacity="0.7">
-    POSTGRESQL PROXY
-  </text>
+    <!-- ── Right: Combined PG + MySQL badge ── -->
+    <rect x="640" y="164" width="80" height="100" rx="14" fill="#1e293b"/>
+    <rect x="644" y="168" width="72" height="92" rx="10" fill="none" stroke="#6b7280" stroke-width="2"/>
+    <text x="680" y="203" font-family="'Segoe UI',sans-serif" font-size="18" font-weight="700" fill="#fbbf24" text-anchor="middle">PG</text>
+    <text x="680" y="238" font-family="'Segoe UI',sans-serif" font-size="13" font-weight="700" fill="#22d3ee" text-anchor="middle">MySQL</text>
 
-  <!-- Small encryption symbol -->
-  <g transform="translate(200, 40)" opacity="0.6">
-    <path d="M -8 6 L -8 0 C -8 -5 8 -5 8 0 L 8 6 Z" fill="none" stroke="#7ec8e3" stroke-width="1.5" stroke-linejoin="round"/>
-    <circle cx="0" cy="2" r="1.5" fill="#7ec8e3"/>
+  </g>
+
+  <!-- ══════════════════════════════════════════════════ -->
+  <!-- WORDMARK                                          -->
+  <!-- ══════════════════════════════════════════════════ -->
+  <g id="wordmark">
+    <line x1="320" y1="315" x2="704" y2="315" stroke="#374151" stroke-width="1.5" stroke-linecap="round"/>
+
+    <text x="512" y="380" class="text-main" text-anchor="middle">HTTP-PG</text>
+    <text x="512" y="415" class="text-sub" text-anchor="middle">DATABASE PROXY</text>
   </g>
 </svg>

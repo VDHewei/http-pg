@@ -46,21 +46,21 @@ func New(ctx context.Context, dsn string, maxConns, minConns int32) (*PoolManage
 }
 
 // AcquireSession acquires a connection for a session.
-func (pm *PoolManager) AcquireSession(ctx context.Context, sessionID string) (*pgxpool.Conn, error) {
+func (pm *PoolManager) AcquireSession(ctx context.Context, sessionID string) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	if conn, exists := pm.sessions[sessionID]; exists {
-		return conn, nil
+	if _, exists := pm.sessions[sessionID]; exists {
+		return nil
 	}
 
 	conn, err := pm.pool.Acquire(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("acquire connection: %w", err)
+		return fmt.Errorf("acquire connection: %w", err)
 	}
 
 	pm.sessions[sessionID] = conn
-	return conn, nil
+	return nil
 }
 
 // ReleaseSession releases the connection for a session.
@@ -99,14 +99,6 @@ func (pm *PoolManager) GetStats() PoolStats {
 	}
 }
 
-// PoolStats holds pool health statistics.
-type PoolStats struct {
-	TotalConns    int32
-	AcquiredConns int32
-	IdleConns     int32
-	MaxConns      int32
-}
-
 // Close closes all sessions and the pool.
 func (pm *PoolManager) Close() {
 	pm.mu.Lock()
@@ -121,9 +113,9 @@ func (pm *PoolManager) Close() {
 
 // ExecSQL executes a SQL query on a session's connection.
 func (pm *PoolManager) ExecSQL(ctx context.Context, sessionID, sql string) (QueryResult, error) {
-	conn, err := pm.AcquireSession(ctx, sessionID)
-	if err != nil {
-		return QueryResult{}, err
+	conn, ok := pm.GetSessionConn(sessionID)
+	if !ok {
+		return QueryResult{}, fmt.Errorf("session %s not found", sessionID)
 	}
 
 	rows, err := conn.Query(ctx, sql)
@@ -164,8 +156,15 @@ func (pm *PoolManager) ExecSQL(ctx context.Context, sessionID, sql string) (Quer
 		return result, fmt.Errorf("rows iteration: %w", rows.Err())
 	}
 
-	result.RowsAffected = rows.CommandTag().RowsAffected()
 	return result, nil
+}
+
+// PoolStats holds pool health statistics.
+type PoolStats struct {
+	TotalConns    int32
+	AcquiredConns int32
+	IdleConns     int32
+	MaxConns      int32
 }
 
 // QueryResult holds the result of a SQL query.
@@ -177,9 +176,9 @@ type QueryResult struct {
 
 // ExecCommand executes a SQL command (INSERT/UPDATE/DELETE/etc) on a session's connection.
 func (pm *PoolManager) ExecCommand(ctx context.Context, sessionID, sql string) (int64, error) {
-	conn, err := pm.AcquireSession(ctx, sessionID)
-	if err != nil {
-		return 0, err
+	conn, ok := pm.GetSessionConn(sessionID)
+	if !ok {
+		return 0, fmt.Errorf("session %s not found", sessionID)
 	}
 
 	tag, err := conn.Exec(ctx, sql)

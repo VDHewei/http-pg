@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/http-pg/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/crypto"
 )
 
 func TestNewClient(t *testing.T) {
@@ -57,7 +57,7 @@ func TestSessionRequest(t *testing.T) {
 		t.Fatalf("NewClient failed: %v", err)
 	}
 
-	sessionID, err := client.SessionRequest([]byte("startup params"))
+	sessionID, err := client.SessionRequest([]byte("startup params"), "pg")
 	if err != nil {
 		t.Fatalf("SessionRequest failed: %v", err)
 	}

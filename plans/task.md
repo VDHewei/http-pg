@@ -166,7 +166,7 @@
   - `CreateSession()` 根据协议类型路由到对应池
   - `HandleQuery()` 根据协议类型执行 `executePgSQL` / `executeMySQL`
   - `executeMySQL()` - MySQL 查询执行
-- [ ] 18.12 修改 `cmd/proxy/main.go` - 双协议代理启动
+- [x] 18.12 修改 `cmd/proxy/main.go` - 双协议代理启动 ✅ 2026-05-10
   - 根据配置启动 PgSQL 和/或 MySQL 代理
   - 优雅关闭所有代理
 - [ ] 18.13 修改 `cmd/server/main.go` - 初始化双池
@@ -193,7 +193,7 @@
 
 ### Task 20: Logo 优化重设计
 
-**目标**：重新设计 Logo 为现代扁平风格，输出到 `docs/logo.svg`。
+**目标**：重新设计 Logo 为现代扁平风格，输出到 `assets/logo.svg`。
 
 **要求**：
 - [ ] 20.1 设计现代扁平风格 SVG Logo（400×400 视口）
@@ -243,4 +243,68 @@ go test ./pkg/pgproxy/... -v -count=1
 
 # 集成测试（需要真实数据库）
 INTEGRATION_TEST=1 go test -tags integration ./test/... -v
+```
+
+---
+
+## MySQL Proxy 实现记录 (2026-05-10)
+
+### 概述
+MySQL 代理以独立包 `pkg/mysqlproxy` 实现（非原计划的 `mysqlparser` 分包），所有协议处理集中在 `protocol.go` 和 `proxy.go`。代理复用与 PgSQL 相同的 HTTP 转发架构（`httpclient` + AES-256-GCM + 相同 API 端点），通过 `X-Protocol: mysql` 头进行协议区分。
+
+### 已完成子任务
+
+#### ✅ X-Protocol 头部支持 (Task #23)
+- `pkg/httpclient/client.go`: `SessionRequest` 新增 `protocol` 参数，添加 `X-Protocol` 头
+- `pkg/handler/adapter/gin.go`: `ginCreateSession` 读取 `X-Protocol` 头
+- `pkg/handler/adapter/fiber.go`: 同上
+- `pkg/pgproxy/proxy.go`: 更新调用 `SessionRequest(..., "pg")`
+- 向后兼容：头缺失时默认 `"pg"`
+
+#### ✅ MySQL 协议实现 (Task #24/#31) - `pkg/mysqlproxy/protocol.go`
+- 包格式: `ReadPacket/WritePacket`（3字节 LE 长度 + 1字节序列号 + 负载）
+- `HandshakeV10`: 服务器问候包（版本/能力标志/字符集/认证数据）
+- `HandshakeResponse41`: 客户端握手响应解析（用户名/数据库/认证数据/能力标志）
+- `BuildOKPacket/BuildERRPacket/BuildEOFPacket`: 状态包构建
+- `ColumnDef41`: 列定义编码（catalog/schema/table/name/charset/type/flags）
+- `BuildResultSetRow`: 文本协议结果集行构建（NULL → 0xFB）
+- `PutLenEncInt/PutLenEncString`: 长度编码整数/字符串
+- `DecodeCommand`: 命令类型解码（COM_QUERY/COM_QUIT/COM_PING 等）
+
+#### ✅ MySQL 代理主逻辑 (Task #25/#32) - `pkg/mysqlproxy/proxy.go`
+- `Proxy` 结构体（与 pgproxy 相同模式）：New/Start/Stop
+- `handleConnection` 流程:
+  1. 发送 HandshakeV10 → 接收 HandshakeResponse41
+  2. 创建会话 `SessionRequest(payload, "mysql")`
+  3. 发送 OK 认证响应
+  4. 命令循环: COM_QUERY → JSON 请求 → HTTP 转发 → 结果集构建
+  5. COM_PING → OK, COM_INIT_DB → OK, COM_QUIT → 清理
+  6. 会话清理 `CloseSession`
+- `buildResultSet`: 列数包 → ColumnDef41 × N → EOF → ResultSetRow × N → EOF
+- `commandTag`: MySQL 风格的 OK info 字符串
+
+#### ✅ MySQL 代理测试 (Task #26/#30) - `pkg/mysqlproxy/proxy_test.go`
+- 15 个测试全部通过
+- 包读写往返测试、握手编码/解码、OK/ERR/EOF 包构建
+- 列定义编码、结果集行构建、长度编码测试
+- 命令解码、SQL 命令提取、命令标签生成
+
+#### ✅ 双协议代理启动 (Task #27/#35) - `cmd/proxy/main.go`
+- 根据 `proxy_protocol` 配置: "pg"/"mysql"/"both"
+- PgSQL 代理 + MySQL 代理独立 goroutine
+- 统一信号处理和优雅关闭
+
+### 待完成
+
+#### Docker Compose MySQL 测试环境 (Task #28/#34)
+- 向 `docker-compose.yml` 添加 MySQL 8.0 服务
+- 创建 `docker-compose.test.yml` 和 `config.test.json`
+
+#### Magefile 构建系统 (Task #29/#33)
+- 目标: Build/Test/TestIntegration/DockerUp/DockerDown/Lint/Release/Clean/All/CI
+
+### 验证结果
+```
+go build ./...              ✅ 全部通过
+go test ./pkg/mysqlproxy/   ✅ 15/15 PASS
 ```

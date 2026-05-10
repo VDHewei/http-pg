@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 
-	"github.com/http-pg/http-pg/pkg/pgpool"
+	"github.com/VDHewei/http-pg/pkg/pgpool"
 )
 
 // pgPoolAdapter 将 pgpool.PoolManager 适配为 handler.Pool 接口
@@ -18,8 +18,7 @@ func NewPgPoolAdapter(pm *pgpool.PoolManager) Pool {
 }
 
 func (a *pgPoolAdapter) AcquireSession(ctx context.Context, sessionID string) error {
-	_, err := a.pm.AcquireSession(ctx, sessionID)
-	return err
+	return a.pm.AcquireSession(ctx, sessionID)
 }
 
 func (a *pgPoolAdapter) ReleaseSession(sessionID string) {

@@ -2,11 +2,11 @@
     "server_addr": ":8080",
     "proxy_addr": ":6543",
     "postgres_dsn": "postgres://postgres:postgres@postgres:5432/testdb?sslmode=disable",
-    "encryption_key": "",
+    "encryption_key": "http-pg-test-key",
     "max_connections": 20,
     "min_connections": 5,
     "server_url": "",
     "proxy_protocol": "both",
     "mysql_proxy_addr": ":3306",
-    "mysql_dsn": "mysql://root:root@mysql:3306/mysql"
+    "mysql_dsn": "mysql://root:root@mysql:3306/testdb"
 }

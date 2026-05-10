@@ -17,12 +17,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgproto3"
 
-	"github.com/http-pg/http-pg/internal/config"
-	"github.com/http-pg/http-pg/pkg/crypto"
-	"github.com/http-pg/http-pg/pkg/httphandler"
-	"github.com/http-pg/http-pg/pkg/httpclient"
-	"github.com/http-pg/http-pg/pkg/pgparser"
-	"github.com/http-pg/http-pg/pkg/pgpool"
+	"github.com/VDHewei/http-pg/internal/config"
+	"github.com/VDHewei/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/httphandler"
+	"github.com/VDHewei/http-pg/pkg/httpclient"
+	"github.com/VDHewei/http-pg/pkg/pgparser"
+	"github.com/VDHewei/http-pg/pkg/pgpool"
 )
 
 // TestEndToEnd tests the full flow: PgSQL Client -> Proxy -> HTTP Server -> PostgreSQL -> back
@@ -108,7 +108,7 @@ func TestEndToEnd(t *testing.T) {
 	t.Log("Health check passed")
 
 	// Test 2: Create session
-	sessionID, err := httpClient.SessionRequest([]byte("startup"))
+	sessionID, err := httpClient.SessionRequest([]byte("startup"), "pg")
 	if err != nil {
 		t.Fatalf("Create session failed: %v", err)
 	}

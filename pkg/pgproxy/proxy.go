@@ -10,8 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgproto3"
 
-	"github.com/http-pg/http-pg/pkg/httpclient"
-	"github.com/http-pg/http-pg/pkg/pgparser"
+	"github.com/VDHewei/http-pg/pkg/httpclient"
+	"github.com/VDHewei/http-pg/pkg/pgparser"
 )
 
 // Proxy is a PgSQL TCP proxy that forwards messages to an HTTP API server.
@@ -99,7 +99,7 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 	}
 
 	// Create session on the HTTP server
-	serverSessionID, err := p.httpClient.SessionRequest(rawStartup)
+	serverSessionID, err := p.httpClient.SessionRequest(rawStartup, "pg")
 	if err != nil {
 		log.Printf("[Proxy] Create session on server error: %v", err)
 		return
@@ -113,6 +113,7 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 	backend.Send(&pgproto3.ParameterStatus{Name: "server_encoding", Value: "UTF8"})
 	backend.Send(&pgproto3.ParameterStatus{Name: "client_encoding", Value: "UTF8"})
 	backend.Send(&pgproto3.ParameterStatus{Name: "DateStyle", Value: "ISO, MDY"})
+	backend.Send(&pgproto3.ParameterStatus{Name: "standard_conforming_strings", Value: "on"})
 	backend.Send(&pgproto3.BackendKeyData{ProcessID: 1234, SecretKey: []byte{0x01, 0x02, 0x03, 0x04}})
 	backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 	if err := backend.Flush(); err != nil {
@@ -189,7 +190,32 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 			continue
 		}
 
-		// Write response back to client
+		// Write response back to client based on message type
+		switch msgType {
+		case 'P': // Parse
+			backend.Send(&pgproto3.ParseComplete{})
+		case 'B': // Bind
+			backend.Send(&pgproto3.BindComplete{})
+		case 'D': // Describe
+			if len(queryResult.Columns) > 0 {
+			rd := &pgproto3.RowDescription{}
+			for _, col := range queryResult.Columns {
+				rd.Fields = append(rd.Fields, pgproto3.FieldDescription{
+					Name:                 []byte(col),
+					TableOID:             0,
+					TableAttributeNumber: 0,
+					DataTypeOID:          0, // unknown — let client auto-detect from text format
+					DataTypeSize:         -1,
+					TypeModifier:         -1,
+					Format:               0, // text format
+				})
+			}
+			backend.Send(rd)
+		} else {
+			backend.Send(&pgproto3.NoData{})
+		}
+	case 'S': // Sync — 不做特殊响应，ReadyForQuery 在最后统一发送
+	case 'E': // Execute
 		if len(queryResult.Columns) > 0 {
 			rd := &pgproto3.RowDescription{}
 			for _, col := range queryResult.Columns {
@@ -197,29 +223,60 @@ func (p *Proxy) handleConnection(clientConn net.Conn) {
 					Name:                 []byte(col),
 					TableOID:             0,
 					TableAttributeNumber: 0,
-					DataTypeOID:          25,
+					DataTypeOID:          0, // unknown
 					DataTypeSize:         -1,
 					TypeModifier:         -1,
-					Format:               0,
+					Format:               0, // text format
 				})
 			}
 			backend.Send(rd)
-		}
-
-		for _, row := range queryResult.Rows {
-			dr := &pgproto3.DataRow{}
-			for _, val := range row {
-				if val == "NULL" {
-					dr.Values = append(dr.Values, nil)
-				} else {
-					dr.Values = append(dr.Values, []byte(val))
-				}
 			}
-			backend.Send(dr)
+			for _, row := range queryResult.Rows {
+				dr := &pgproto3.DataRow{}
+				for _, val := range row {
+					if val == "NULL" {
+						dr.Values = append(dr.Values, nil)
+					} else {
+						dr.Values = append(dr.Values, []byte(val))
+					}
+				}
+				backend.Send(dr)
+			}
+			tag := commandTag(sql, len(queryResult.Rows), queryResult.RowsAffected)
+			backend.Send(&pgproto3.CommandComplete{CommandTag: tag})
+		default: // 'Q' (Simple Query) and others
+			if len(queryResult.Columns) > 0 {
+				rd := &pgproto3.RowDescription{}
+				for _, col := range queryResult.Columns {
+					rd.Fields = append(rd.Fields, pgproto3.FieldDescription{
+						Name:                 []byte(col),
+						TableOID:             0,
+						TableAttributeNumber: 0,
+						DataTypeOID:          0, // unknown — let client auto-detect from text format
+						DataTypeSize:         -1,
+						TypeModifier:         -1,
+						Format:               0,
+					})
+				}
+				backend.Send(rd)
+			}
+
+			for _, row := range queryResult.Rows {
+				dr := &pgproto3.DataRow{}
+				for _, val := range row {
+					if val == "NULL" {
+						dr.Values = append(dr.Values, nil)
+					} else {
+						dr.Values = append(dr.Values, []byte(val))
+					}
+				}
+				backend.Send(dr)
+			}
+
+			tag := commandTag(sql, len(queryResult.Rows), queryResult.RowsAffected)
+			backend.Send(&pgproto3.CommandComplete{CommandTag: tag})
 		}
 
-		tag := commandTag(sql, len(queryResult.Rows), queryResult.RowsAffected)
-		backend.Send(&pgproto3.CommandComplete{CommandTag: tag})
 		backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 
 		if err := backend.Flush(); err != nil {

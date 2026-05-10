@@ -1,5 +1,8 @@
 version: '3.8'
 
+# Test-specific Docker Compose - 测试专用环境
+# 所有服务端口映射到宿主机避免冲突，使用独立网络 test-network
+
 services:
   postgres:
     image: postgres:14-alpine
@@ -8,25 +11,29 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: testdb
     ports:
-      - "5432:5432"
+      - "25432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - test-network
 
   mysql:
     image: mysql:8.0
     environment:
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: mysql
+      MYSQL_DATABASE: testdb
     ports:
-      - "3306:3306"
+      - "23306:3306"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - test-network
 
   server:
     build:
@@ -34,15 +41,19 @@ services:
       dockerfile: Dockerfile
       target: server
     environment:
-      ENCRYPTION_KEY: "http-pg-integration-test-key-2024"
+      ENCRYPTION_KEY: "http-pg-test-key"
     ports:
-      - "8080:8080"
+      - "28080:8080"
     depends_on:
       postgres:
         condition: service_healthy
       mysql:
         condition: service_healthy
+    volumes:
+      - ./config.test.json:/app/config.json
     command: ["-config", "/app/config.json"]
+    networks:
+      - test-network
 
   proxy:
     build:
@@ -50,10 +61,18 @@ services:
       dockerfile: Dockerfile
       target: proxy
     environment:
-      ENCRYPTION_KEY: "http-pg-integration-test-key-2024"
+      ENCRYPTION_KEY: "http-pg-test-key"
     ports:
-      - "6543:6543"
-      - "3307:3306"
+      - "26543:6543"
+      - "23307:3306"
     depends_on:
       - server
+    volumes:
+      - ./config.test.json:/app/config.json
     command: ["-config", "/app/config.json"]
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge

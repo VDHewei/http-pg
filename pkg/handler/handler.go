@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/http-pg/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/crypto"
 )
 
 // Handler 框架无关的请求处理器，封装所有核心业务逻辑
@@ -23,7 +23,9 @@ type Handler struct {
 	encKey []byte
 	// stmts PgSQL 扩展查询协议的语句缓存（sessionID → SQL）
 	stmts map[string]string
-	// mu 保护 stmts 的并发访问
+	// sessionPools 会话到连接池的映射（sessionID → Pool）
+	sessionPools map[string]Pool
+	// mu 保护 stmts 和 sessionPools 的并发访问
 	mu sync.RWMutex
 }
 
@@ -44,10 +46,11 @@ func NewHandler(pgPool Pool, mysqlPool Pool, encKey string) (*Handler, error) {
 	}
 
 	return &Handler{
-		pgPool:    pgPool,
-		mysqlPool: mysqlPool,
-		encKey:    key,
-		stmts:     make(map[string]string),
+		pgPool:       pgPool,
+		mysqlPool:    mysqlPool,
+		encKey:       key,
+		stmts:        make(map[string]string),
+		sessionPools: make(map[string]Pool),
 	}, nil
 }
 
@@ -84,6 +87,11 @@ func (h *Handler) CreateSession(ctx context.Context, encryptedBody []byte, proto
 	if err := pool.AcquireSession(ctx, sessionID); err != nil {
 		return "", fmt.Errorf("acquire connection: %w", err)
 	}
+
+	// 记录会话到连接池的映射关系
+	h.mu.Lock()
+	h.sessionPools[sessionID] = pool
+	h.mu.Unlock()
 
 	log.Printf("[Session %s] Created (%s)", sessionID[:8], protocol)
 	return sessionID, nil
@@ -136,8 +144,49 @@ func (h *Handler) HandleQuery(ctx context.Context, sessionID string, encryptedBo
 		return encrypted, nil
 	}
 
-	// Bind('B') / Execute('E'): 使用缓存语句
-	if req.Type == 'E' || req.Type == 'B' {
+	// Bind('B'): 绑定参数到入口，验证缓存语句存在，返回空结果
+	if req.Type == 'B' {
+		h.mu.RLock()
+		cachedSQL, ok := h.stmts[sessionID]
+		h.mu.RUnlock()
+
+		if !ok || cachedSQL == "" {
+			response := &QueryResponse{Error: "no parsed statement found for session"}
+			responseJSON, _ := json.Marshal(response)
+			encrypted, _ := crypto.Encrypt(responseJSON, h.encKey)
+			return encrypted, nil
+		}
+
+		responseJSON, _ := json.Marshal(QueryResponse{})
+		encrypted, err := crypto.Encrypt(responseJSON, h.encKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt bind response: %w", err)
+		}
+		return encrypted, nil
+	}
+
+	// Describe('D'): 描述入口/语句，返回空结果（客户端会从 Execute 结果获取列信息）
+	if req.Type == 'D' {
+		responseJSON, _ := json.Marshal(QueryResponse{})
+		encrypted, err := crypto.Encrypt(responseJSON, h.encKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt describe response: %w", err)
+		}
+		return encrypted, nil
+	}
+
+	// Sync('S'): 同步点，返回空结果
+	if req.Type == 'S' {
+		responseJSON, _ := json.Marshal(QueryResponse{})
+		encrypted, err := crypto.Encrypt(responseJSON, h.encKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt sync response: %w", err)
+		}
+		return encrypted, nil
+	}
+
+	// Execute('E'): 使用缓存语句执行查询
+	if req.Type == 'E' {
 		h.mu.RLock()
 		cachedSQL, ok := h.stmts[sessionID]
 		h.mu.RUnlock()
@@ -186,7 +235,8 @@ func (h *Handler) executeSQL(ctx context.Context, sessionID, sql, cmdType string
 
 // executeQuery 执行查询类 SQL（SELECT/SHOW 等），返回完整结果集
 func (h *Handler) executeQuery(ctx context.Context, sessionID, sql string) (*QueryResponse, error) {
-	result, err := h.pgPool.ExecSQL(ctx, sessionID, sql)
+	pool := h.getSessionPool(sessionID)
+	result, err := pool.ExecSQL(ctx, sessionID, sql)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +249,8 @@ func (h *Handler) executeQuery(ctx context.Context, sessionID, sql string) (*Que
 
 // executeCommand 执行命令类 SQL（INSERT/UPDATE/DELETE 等），返回影响行数
 func (h *Handler) executeCommand(ctx context.Context, sessionID, sql string) (*QueryResponse, error) {
-	rowsAffected, err := h.pgPool.ExecCommand(ctx, sessionID, sql)
+	pool := h.getSessionPool(sessionID)
+	rowsAffected, err := pool.ExecCommand(ctx, sessionID, sql)
 	if err != nil {
 		return nil, err
 	}
@@ -214,15 +265,25 @@ func (h *Handler) executeCommand(ctx context.Context, sessionID, sql string) (*Q
 //   - ctx: 请求上下文
 //   - sessionID: 要关闭的会话标识符
 func (h *Handler) CloseSession(ctx context.Context, sessionID string) {
-	// 尝试释放两种池中的会话（幂等操作）
-	h.pgPool.ReleaseSession(sessionID)
-	if h.mysqlPool != nil {
-		h.mysqlPool.ReleaseSession(sessionID)
+	// 根据会话映射的池释放连接（精确释放，避免遍历所有池）
+	h.mu.RLock()
+	pool, ok := h.sessionPools[sessionID]
+	h.mu.RUnlock()
+
+	if ok {
+		pool.ReleaseSession(sessionID)
+	} else {
+		// 兼容旧会话（没有 sessionPools 映射时尝试两个池）
+		h.pgPool.ReleaseSession(sessionID)
+		if h.mysqlPool != nil {
+			h.mysqlPool.ReleaseSession(sessionID)
+		}
 	}
 
-	// 清理扩展查询协议缓存
+	// 清理扩展查询协议缓存和会话池映射
 	h.mu.Lock()
 	delete(h.stmts, sessionID)
+	delete(h.sessionPools, sessionID)
 	h.mu.Unlock()
 
 	log.Printf("[Session %s] Closed", sessionID[:8])
@@ -250,6 +311,19 @@ func (h *Handler) poolForProtocol(protocol ProtocolType) Pool {
 	default:
 		return nil
 	}
+}
+
+// getSessionPool 根据会话 ID 返回对应的连接池
+// 优先查找 sessionPools 映射，未找到时回退到 pgPool（向后兼容）
+func (h *Handler) getSessionPool(sessionID string) Pool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	if pool, ok := h.sessionPools[sessionID]; ok {
+		return pool
+	}
+	// 未找到映射时回退到默认的 PgSQL 池
+	return h.pgPool
 }
 
 // sqlCommandType 提取 SQL 语句的首个命令词（SELECT/INSERT/UPDATE 等）

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/http-pg/http-pg/pkg/crypto"
+	"github.com/VDHewei/http-pg/pkg/crypto"
 )
 
 // ClientConfig HTTP 客户端配置
@@ -70,17 +70,27 @@ func NewClientWithConfig(cfg ClientConfig, encKey string) (*Client, error) {
 //
 // 处理流程:
 //  1. 加密启动参数
-//  2. POST /api/v1/session
+//  2. POST /api/v1/session（附带 X-Protocol 头指定数据库类型）
 //  3. 返回服务端生成的 session UUID
-func (c *Client) SessionRequest(params []byte) (string, error) {
+//
+// 参数:
+//   - params: 加密的连接参数（启动消息原始字节）
+//   - protocol: 数据库协议类型 ("pg" 或 "mysql")
+func (c *Client) SessionRequest(params []byte, protocol string) (string, error) {
 	// 加密启动参数
 	encrypted, err := crypto.Encrypt(params, c.encKey)
 	if err != nil {
 		return "", fmt.Errorf("encrypt startup params: %w", err)
 	}
 
-	reqBody := bytes.NewBuffer(encrypted)
-	resp, err := c.httpClient.Post(c.serverURL+"/api/v1/session", "application/octet-stream", reqBody)
+	req, err := http.NewRequest("POST", c.serverURL+"/api/v1/session", bytes.NewBuffer(encrypted))
+	if err != nil {
+		return "", fmt.Errorf("create session request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Protocol", protocol)
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("http post session: %w", err)
 	}
